@@ -82,39 +82,30 @@ to be used for encryption"
       end
 
       # Public: Encrypt a table for the first time.
-      def encrypt_table!
+      def encrypt_table!(scope=:all)
+        switch_table!(scope, :encrypt)
+      end
+
+      # Public: Decrypt a table (reverse of encrypt_table!)
+      def decrypt_table!(scope=:all)
+        switch_table!(scope, :decrypt)
+      end
+
+      private
+
+      def switch_table!(scope, encryption_direction)
         tmp_table = Class.new(ActiveRecord::Base).tap do |c|
           c.table_name = self.table_name
           c.inheritance_column = :type_disabled
         end
 
         transaction do
-          tmp_table.find_each do |r|
-            crypt_keeper_fields.each do |field|
-              r.send("#{field}=", encryptor.encrypt(r[field])) if r[field].present?
-            end
-
-            r.save!
+          tmp_table.all.merge(self.public_send(scope)).find_each do |record|
+            updated_attributes = Hash[crypt_keeper_fields.collect { |field| [field, encryptor.public_send(encryption_direction, record[field])] }]
+            record.update_columns(updated_attributes)
           end
         end
       end
-
-      # Public: Decrypt a table (reverse of encrypt_table!)
-      def decrypt_table!
-        tmp_table = Class.new(ActiveRecord::Base).tap { |c| c.table_name = self.table_name }
-
-        transaction do
-          tmp_table.find_each do |r|
-            crypt_keeper_fields.each do |field|
-              r.send("#{field}=", encryptor.decrypt(r[field])) if r[field].present?
-            end
-
-            r.save!
-          end
-        end
-      end
-
-      private
 
       # Private: The encryptor class
       def encryptor_klass
